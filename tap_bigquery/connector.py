@@ -56,6 +56,8 @@ class BigQueryConnector(SQLConnector):
 
         if credentials:
             try:
+                # Note: json_serializer/json_deserializer commented out - not needed for
+                # BigQuery dialect as it handles JSON types natively
                 return sqlalchemy.create_engine(
                     self.sqlalchemy_url,
                     echo=False,
@@ -66,8 +68,8 @@ class BigQueryConnector(SQLConnector):
                     ),
                 )
             except (TypeError, json.decoder.JSONDecodeError):
-                self.logger.warning(
-                    "'google_application_credentials' not valid json trying path",
+                self.logger.debug(
+                    "Credentials not valid JSON (trying as file path)",
                 )
                 return sqlalchemy.create_engine(
                     self.sqlalchemy_url,

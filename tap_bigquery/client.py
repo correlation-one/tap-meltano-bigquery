@@ -28,7 +28,7 @@ CREDENTIALS_STRING_ENV = "GOOGLE_APPLICATION_CREDENTIALS_STRING"
 CREDENTIALS_PATH_ENV = "GOOGLE_APPLICATION_CREDENTIALS"
 
 
-def _get_bigquery_client(config: dict, project_id: str | None = None):
+def _get_bigquery_client(config: dict, project_id: str | None = None) -> bigquery.Client:
     """Build a BigQuery client. Credential resolution order:
 
     1. config['google_application_credentials'] (JSON or path)
@@ -36,6 +36,9 @@ def _get_bigquery_client(config: dict, project_id: str | None = None):
     3. GOOGLE_APPLICATION_CREDENTIALS env (path)
     4. Application Default Credentials (ADC) – workload identity, gcloud, etc.
     """
+    import logging
+
+    logger = logging.getLogger(__name__)
     credentials = config.get("google_application_credentials")
     if not credentials and os.environ.get(CREDENTIALS_STRING_ENV):
         credentials = os.environ[CREDENTIALS_STRING_ENV]
@@ -51,8 +54,10 @@ def _get_bigquery_client(config: dict, project_id: str | None = None):
                 json.loads(credentials) if isinstance(credentials, str) else credentials,
                 project=project_id,
             )
-        except (TypeError, json.decoder.JSONDecodeError):
-            pass
+        except (TypeError, json.decoder.JSONDecodeError) as e:
+            logger.debug(
+                "Credentials not valid JSON (trying as file path): %s", str(e)
+            )
         return bigquery.Client.from_service_account_json(credentials, project=project_id)
 
     creds, default_project = default_credentials(
