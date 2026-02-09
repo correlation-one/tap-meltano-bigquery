@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import os
 import typing as t
 
 import sqlalchemy
@@ -43,10 +44,20 @@ class BigQueryConnector(SQLConnector):
         Returns:
             A new SQLAlchemy Engine.
         """
-        credentials : str | dict = self.config.get("google_application_credentials")
+        credentials: str | dict | None = self.config.get("google_application_credentials")
+        if not credentials and os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_STRING"):
+            credentials = os.environ["GOOGLE_APPLICATION_CREDENTIALS_STRING"]
+        if not credentials and os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+            return sqlalchemy.create_engine(
+                self.sqlalchemy_url,
+                echo=False,
+                credentials_path=os.environ["GOOGLE_APPLICATION_CREDENTIALS"],
+            )
 
         if credentials:
             try:
+                # Note: json_serializer/json_deserializer commented out - not needed for
+                # BigQuery dialect as it handles JSON types natively
                 return sqlalchemy.create_engine(
                     self.sqlalchemy_url,
                     echo=False,
@@ -55,27 +66,18 @@ class BigQueryConnector(SQLConnector):
                         if isinstance(credentials, str)
                         else credentials
                     ),
-                    # json_serializer=self.serialize_json,
-                    # json_deserializer=self.deserialize_json,
                 )
             except (TypeError, json.decoder.JSONDecodeError):
-                self.logger.warning(
-                    "'google_application_credentials' not valid json trying path",
+                self.logger.debug(
+                    "Credentials not valid JSON (trying as file path)",
                 )
                 return sqlalchemy.create_engine(
                     self.sqlalchemy_url,
                     echo=False,
                     credentials_path=credentials,
-                    # json_serializer=self.serialize_json,
-                    # json_deserializer=self.deserialize_json,
                 )
-        else:
-            return sqlalchemy.create_engine(
-                self.sqlalchemy_url,
-                echo=False,
-                # json_serializer=self.serialize_json,
-                # json_deserializer=self.deserialize_json,
-            )
+        # No credentials: use Application Default Credentials (ADC)
+        return sqlalchemy.create_engine(self.sqlalchemy_url, echo=False)
 
     def to_array_type(
         self,
