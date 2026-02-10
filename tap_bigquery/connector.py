@@ -29,6 +29,14 @@ if t.TYPE_CHECKING:
 class BigQueryConnector(SQLConnector):
     """Connects to the BigQuery SQL source."""
 
+    @staticmethod
+    def _normalize_table_name(schema_name: str, table_name: str) -> str:
+        """Strip duplicated schema prefixes from table names."""
+        schema_prefix = f"{schema_name}."
+        if table_name.startswith(schema_prefix):
+            return table_name[len(schema_prefix):]
+        return table_name
+
     def create_engine(self) -> Engine:
         """Creates and returns a new engine. Do not call outside of _engine.
 
@@ -180,6 +188,8 @@ class BigQueryConnector(SQLConnector):
         Returns:
             `CatalogEntry` object for the given table or a view
         """
+        table_name = self._normalize_table_name(schema_name, table_name)
+
         # Initialize unique stream name
         unique_stream_id = f"{schema_name}-{table_name}"
 
@@ -247,6 +257,43 @@ class BigQueryConnector(SQLConnector):
             replication_key=None,  # Must be defined by user
         )
 
+    def discover_catalog_entries(
+        self,
+        *args,
+        **kwargs,
+    ) -> list[dict[str, t.Any]]:
+        """Discover catalog entries using per-table reflection.
+
+        BigQuery's SQLAlchemy dialect can return table names prefixed with the
+        dataset, and bulk reflection may then resolve dataset names as project
+        IDs. Discovering tables one-by-one avoids that path and keeps the
+        project ID stable.
+        """
+        del args, kwargs  # Connector discovery does not require passthrough args.
+        engine = self._engine
+        inspected = sqlalchemy.inspect(engine)
+
+        catalog_entries: list[dict[str, t.Any]] = []
+        for schema_name in self.get_schema_names(engine, inspected):
+            for table_name, is_view in self.get_object_names(
+                engine,
+                inspected,
+                schema_name,
+            ):
+                normalized_table_name = self._normalize_table_name(
+                    schema_name,
+                    table_name,
+                )
+                catalog_entries.append(
+                    self.discover_catalog_entry(
+                        engine=engine,
+                        inspected=inspected,
+                        schema_name=schema_name,
+                        table_name=normalized_table_name,
+                        is_view=is_view,
+                    ).to_dict(),
+                )
+        return catalog_entries
     def get_sqlalchemy_url(self, config: dict) -> str:
         """Concatenate a SQLAlchemy URL for use in connecting to the source."""
         return f"bigquery://{config['project_id']}"
@@ -265,7 +312,7 @@ class BigQueryConnector(SQLConnector):
         # Let's strip `schema_name` prefix on the inspection
 
         objects = [
-            (table_name.split(".")[-1], is_view)
+            (self._normalize_table_name(schema_name, table_name), is_view)
             for (table_name, is_view) in super().get_object_names(
                 engine,
                 inspected,
