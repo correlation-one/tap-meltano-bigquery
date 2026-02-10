@@ -73,6 +73,7 @@ class BigQueryStream(SQLStream):
     """Stream class for BigQuery streams."""
 
     connector_class = BigQueryConnector
+    selected_by_default = True
 
     @cached_property
     def client(self):
