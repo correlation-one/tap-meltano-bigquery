@@ -12,6 +12,15 @@ class TapBigQuery(SQLTap):
     """Google BigQuery tap."""
 
     name = "tap-bigquery"
+    capabilities = [
+        "about",
+        "catalog",
+        "discover",
+        "state",
+        "stream-maps",
+        "schema-flattening",
+        "batch",
+    ]
 
     config_jsonschema = th.PropertiesList(
         th.Property(
