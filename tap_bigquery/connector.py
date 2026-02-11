@@ -286,16 +286,39 @@ class BigQueryConnector(SQLConnector):
                     schema_name,
                     table_name,
                 )
-                catalog_entries.append(
-                    self.discover_catalog_entry(
-                        engine=engine,
-                        inspected=inspected,
-                        schema_name=schema_name,
-                        table_name=normalized_table_name,
-                        is_view=is_view,
-                    ).to_dict(),
-                )
+                entry_dict = self.discover_catalog_entry(
+                    engine=engine,
+                    inspected=inspected,
+                    schema_name=schema_name,
+                    table_name=normalized_table_name,
+                    is_view=is_view,
+                ).to_dict()
+                self._ensure_selected_by_default(entry_dict)
+                catalog_entries.append(entry_dict)
+
+        self.logger.info(
+            "Discovered %d BigQuery stream(s): %s",
+            len(catalog_entries),
+            [entry.get("tap_stream_id") for entry in catalog_entries],
+        )
         return catalog_entries
+
+    @staticmethod
+    def _ensure_selected_by_default(catalog_entry: dict[str, t.Any]) -> None:
+        """Force stream-level selected-by-default metadata on discovered entries."""
+        metadata_entries = catalog_entry.get("metadata", [])
+        for metadata_entry in metadata_entries:
+            if metadata_entry.get("breadcrumb") == []:
+                metadata_entry.setdefault("metadata", {})["selected-by-default"] = True
+                return
+
+        metadata_entries.append(
+            {
+                "breadcrumb": [],
+                "metadata": {"selected-by-default": True},
+            },
+        )
+        catalog_entry["metadata"] = metadata_entries
     def get_sqlalchemy_url(self, config: dict) -> str:
         """Concatenate a SQLAlchemy URL for use in connecting to the source."""
         return f"bigquery://{config['project_id']}"
